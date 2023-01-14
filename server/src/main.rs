@@ -29,7 +29,7 @@ pub async fn main() -> anyhow::Result<()> {
     let rt = Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|err| err_explain!(format!("Error setting up thread builder: {}", err)))?;
+        .map_err(|err| err_explain!(format!("Error setting up thread builder: {err}")))?;
 
     std::thread::spawn(move || {
         let local = LocalSet::new();
@@ -59,7 +59,7 @@ pub async fn main() -> anyhow::Result<()> {
         let rt = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|err| err_explain!(format!("Error setting up thread builder: {}", err)))?;
+            .map_err(|err| err_explain!(format!("Error setting up thread builder: {err}")))?;
 
         let sender_clone = sender.clone();
 

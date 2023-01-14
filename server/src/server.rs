@@ -164,7 +164,7 @@ impl Game {
         }
 
         self.turn = v ^ 3;
-        return PlaceResult::Success;
+        PlaceResult::Success
     }
 }
 
@@ -230,7 +230,7 @@ impl Connect4Server {
                                 }
                             );
                         } else {
-                            self.acquired_names.insert(username.clone(), id.clone());
+                            self.acquired_names.insert(username.clone(), *id);
                             client.username = Some(username);
                             encode!(
                                 client.write,
@@ -267,7 +267,7 @@ impl Connect4Server {
                     },
                     ClientMessage::AcquireLobby => {
                         if matches!(client.username, None) {
-                            clients_to_remove.push(id.clone());
+                            clients_to_remove.push(*id);
                             continue;
                         }
                         client.state = ClientState::Lobby
@@ -281,28 +281,28 @@ impl Connect4Server {
                                 write_game.client_a_acquire = true;
                                 if write_game.client_b_acquire {
                                     client_game_ready.push((
-                                        write_game.client_a.clone(),
-                                        write_game.client_b.clone(),
+                                        write_game.client_a,
+                                        write_game.client_b,
                                     ))
                                 }
                             } else if write_game.client_b.eq(id) {
                                 write_game.client_b_acquire = true;
                                 if write_game.client_a_acquire {
                                     client_game_ready.push((
-                                        write_game.client_a.clone(),
-                                        write_game.client_b.clone(),
+                                        write_game.client_a,
+                                        write_game.client_b,
                                     ))
                                 }
                             } else {
-                                clients_to_remove.push(id.clone());
+                                clients_to_remove.push(*id);
                             }
                             drop(write_game);
                         } else {
-                            clients_to_remove.push(id.clone());
+                            clients_to_remove.push(*id);
                         }
                     }
                     ClientMessage::SocketDie => {
-                        clients_to_remove.push(id.clone());
+                        clients_to_remove.push(*id);
                     }
                     ClientMessage::PlacePiece {
                         column,
@@ -311,11 +311,11 @@ impl Connect4Server {
                         if let Some(game) = client.game.as_ref() {
                             let mut write = game.write().await;
                             let (other_id, v) = if id.eq(&write.client_a) {
-                                (write.client_b.clone(), 1)
+                                (write.client_b, 1)
                             } else if id.eq(&write.client_b) {
-                                (write.client_a.clone(), 2)
+                                (write.client_a, 2)
                             } else {
-                                clients_to_remove.push(id.clone());
+                                clients_to_remove.push(*id);
                                 drop(write);
                                 continue;
                             };
@@ -411,9 +411,9 @@ impl Connect4Server {
             .filter(|client| matches!(client.state, ClientState::LookingForGame));
         while let Ok(chunk) = clients_looking_for_games.next_chunk::<2>() {
             let new_game = Game {
-                client_a: chunk[0].uuid.clone(),
+                client_a: chunk[0].uuid,
                 client_a_acquire: false,
-                client_b: chunk[1].uuid.clone(),
+                client_b: chunk[1].uuid,
                 client_b_acquire: false,
                 connect_4_board: [[0u8; 6]; 7],
                 turn: 1u8,
@@ -442,7 +442,7 @@ impl Connect4Server {
                 username: Some(name),
                 game,
                 ..
-            }) = self.clients.remove(&removable)
+            }) = self.clients.remove(removable)
             {
                 self.acquired_names.remove(&name);
                 if let Some(game) = game {
@@ -502,11 +502,11 @@ impl<'a> Future for Connect4ServerRead<'a> {
             }
         }
 
-        while let Poll::Ready(client) = (&mut Pin::new(&mut me.client_receiver)).poll_recv(cx) {
+        while let Poll::Ready(client) = Pin::new(&mut me.client_receiver).poll_recv(cx) {
             if let Some(client) = client {
                 let client_id = Uuid::new_v4();
                 me.clients.insert(
-                    client_id.clone(),
+                    client_id,
                     ServerClient {
                         uuid: client_id,
                         state: ClientState::Login,
