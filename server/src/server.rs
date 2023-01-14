@@ -11,17 +11,7 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-
-macro_rules! encode {
-    ($write:expr, $ty:ty, $packet:expr) => {
-        let _ = core::drax::prelude::DraxWriteExt::encode_component::<(), $ty>(
-            &mut $write,
-            &mut (),
-            &$packet,
-        )
-        .await;
-    };
-}
+use core::encode;
 
 #[derive(Debug)]
 pub enum ClientMessage {

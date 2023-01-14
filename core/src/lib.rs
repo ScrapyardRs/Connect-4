@@ -4,6 +4,18 @@ use drax::transport::packet::string::LimitedString;
 
 pub extern crate drax;
 
+#[macro_export]
+macro_rules! encode {
+    ($write:expr, $ty:ty, $packet:expr) => {
+        let _ = core::drax::prelude::DraxWriteExt::encode_component::<(), $ty>(
+            &mut $write,
+            &mut (),
+            &$packet,
+        )
+        .await;
+    };
+}
+
 pub mod logger;
 
 pub type Username = LimitedString<16>;
