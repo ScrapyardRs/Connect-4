@@ -19,6 +19,18 @@ enum InnerPacket {
     Game(ClientboundGamePacket),
 }
 
+macro_rules! handle_error_quit {
+    ($maybe_err:expr) => {
+        match $maybe_err {
+            Ok(val) => val,
+            Err(err) => {
+                log::error!("Error during packet reads: {}", err);
+                return;
+            }
+        }
+    };
+}
+
 pub async fn spawn_game_client(
     message_sender: UnboundedSender<WindowMessage>,
     mut message_receiver: UnboundedReceiver<PacketMessage>,
@@ -54,31 +66,29 @@ pub async fn spawn_game_client(
                 let read_client_state = client_state.read().await;
                 let current_state = *read_client_state;
                 drop(read_client_state);
-                packet_sender
-                    .send(match current_state {
-                        ClientState::Login => {
-                            let next_packet = read
-                                .decode_component::<(), ClientboundLoginPacket>(&mut ())
+                handle_error_quit!(packet_sender.send(match current_state {
+                    ClientState::Login => {
+                        let next_packet = handle_error_quit!(
+                            read.decode_component::<(), ClientboundLoginPacket>(&mut ())
                                 .await
-                                .unwrap(); // todo handle these errors
-                            InnerPacket::Login(next_packet)
-                        }
-                        ClientState::Lobby => {
-                            let next_packet = read
-                                .decode_component::<(), ClientboundLobbyPacket>(&mut ())
+                        );
+                        InnerPacket::Login(next_packet)
+                    }
+                    ClientState::Lobby => {
+                        let next_packet = handle_error_quit!(
+                            read.decode_component::<(), ClientboundLobbyPacket>(&mut ())
                                 .await
-                                .unwrap(); // todo handle these errors
-                            InnerPacket::Lobby(next_packet)
-                        }
-                        ClientState::Game => {
-                            let next_packet = read
-                                .decode_component::<(), ClientboundGamePacket>(&mut ())
+                        );
+                        InnerPacket::Lobby(next_packet)
+                    }
+                    ClientState::Game => {
+                        let next_packet = handle_error_quit!(
+                            read.decode_component::<(), ClientboundGamePacket>(&mut ())
                                 .await
-                                .unwrap(); // todo handle these errors
-                            InnerPacket::Game(next_packet)
-                        }
-                    })
-                    .unwrap(); // todo handle this error
+                        );
+                        InnerPacket::Game(next_packet)
+                    }
+                }));
             }
         });
 
