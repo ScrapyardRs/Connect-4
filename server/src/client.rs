@@ -1,6 +1,6 @@
 use crate::server::ClientMessage;
-use core::drax::prelude::DraxReadExt;
-use core::packets::*;
+use connect_4_core::drax::prelude::DraxReadExt;
+use connect_4_core::packets::*;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -8,6 +8,7 @@ pub enum ClientState {
     Login,
     Lobby,
     LookingForGame,
+    WaitingForGame,
     Game,
 }
 
@@ -15,6 +16,26 @@ pub struct Client {
     read: OwnedReadHalf,
     state: ClientState,
     message_sender: UnboundedSender<ClientMessage>,
+}
+
+macro_rules! watch_eof {
+    ($read:expr) => {
+        match $read {
+            Ok(t) => t,
+            Err(err) => {
+                if matches!(
+                    err,
+                    connect_4_core::drax::prelude::TransportError {
+                        error_type: connect_4_core::drax::prelude::ErrorType::EOF,
+                        ..
+                    }
+                ) {
+                    return Ok(());
+                }
+                return Err(err.into());
+            }
+        }
+    };
 }
 
 impl Client {
@@ -30,11 +51,11 @@ impl Client {
         loop {
             match self.state {
                 ClientState::Login => {
-                    match self
-                        .read
-                        .decode_component::<(), ServerboundLoginPacket>(&mut ())
-                        .await?
-                    {
+                    match watch_eof!(
+                        self.read
+                            .decode_component::<(), ServerboundLoginPacket>(&mut ())
+                            .await
+                    ) {
                         ServerboundLoginPacket::KeepAlive => {
                             self.message_sender.send(ClientMessage::KeepAlive)?;
                         }
@@ -42,6 +63,7 @@ impl Client {
                             username,
                             transaction_id,
                         } => {
+                            log::debug!("Received username req: {username}, {transaction_id}");
                             self.message_sender.send(ClientMessage::RequestUsername {
                                 username,
                                 transaction_id,
@@ -53,12 +75,12 @@ impl Client {
                         }
                     }
                 }
-                ClientState::Lobby | ClientState::LookingForGame => {
-                    match self
-                        .read
-                        .decode_component::<(), ServerboundLobbyPacket>(&mut ())
-                        .await?
-                    {
+                ClientState::Lobby | ClientState::LookingForGame | ClientState::WaitingForGame => {
+                    match watch_eof!(
+                        self.read
+                            .decode_component::<(), ServerboundLobbyPacket>(&mut ())
+                            .await
+                    ) {
                         ServerboundLobbyPacket::KeepAlive => {
                             self.message_sender.send(ClientMessage::KeepAlive)?;
                         }
@@ -72,21 +94,23 @@ impl Client {
                     }
                 }
                 ClientState::Game => {
-                    match self
-                        .read
-                        .decode_component::<(), ServerboundGamePacket>(&mut ())
-                        .await?
-                    {
+                    match watch_eof!(
+                        self.read
+                            .decode_component::<(), ServerboundGamePacket>(&mut ())
+                            .await
+                    ) {
                         ServerboundGamePacket::KeepAlive => {
                             self.message_sender.send(ClientMessage::KeepAlive)?;
                         }
                         ServerboundGamePacket::PlacePiece {
                             column,
                             transaction_id,
-                        } => self.message_sender.send(ClientMessage::PlacePiece {
-                            column,
-                            transaction_id,
-                        })?,
+                        } => {
+                            self.message_sender.send(ClientMessage::PlacePiece {
+                                column,
+                                transaction_id,
+                            })?;
+                        }
                         ServerboundGamePacket::AcquireLobby => {
                             self.message_sender.send(ClientMessage::AcquireLobby)?;
                             self.state = ClientState::Lobby;

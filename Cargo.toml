@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "core",
+    "connect-4-core",
     "server",
     "client"
 ]

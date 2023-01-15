@@ -7,8 +7,8 @@ use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 use tokio::task::LocalSet;
 
-use core::drax::err_explain;
-use core::logger::{system_logger, LoggerOptions};
+use connect_4_core::drax::err_explain;
+use connect_4_core::logger::{system_logger, LoggerOptions};
 
 use crate::client::Client;
 use crate::server::{ClientAdd, Connect4Server};

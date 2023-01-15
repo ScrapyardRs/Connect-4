@@ -1,5 +1,6 @@
 use crate::client::ClientState;
-use core::packets::*;
+use connect_4_core::encode;
+use connect_4_core::packets::*;
 use pin_project_lite::pin_project;
 use std::collections::HashMap;
 use std::future::Future;
@@ -11,7 +12,6 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use core::encode;
 
 #[derive(Debug)]
 pub enum ClientMessage {
@@ -197,7 +197,7 @@ impl Connect4Server {
         }
     }
 
-    pub async fn tick_server(&mut self) -> core::drax::prelude::Result<()> {
+    pub async fn tick_server(&mut self) -> connect_4_core::drax::prelude::Result<()> {
         let mut clients_to_remove = vec![];
         let mut client_game_ready = vec![];
         let mut lost_clients = vec![];
@@ -210,7 +210,16 @@ impl Connect4Server {
                         username,
                         transaction_id,
                     } => {
-                        if self.acquired_names.contains_key(&username) {
+                        if !username.chars().all(char::is_alphanumeric) {
+                            encode!(
+                                client.write,
+                                ClientboundLoginPacket,
+                                ClientboundLoginPacket::UsernameResult {
+                                    success: false,
+                                    transaction_id,
+                                }
+                            );
+                        } else if self.acquired_names.contains_key(&username.to_lowercase()) {
                             encode!(
                                 client.write,
                                 ClientboundLoginPacket,
@@ -220,7 +229,8 @@ impl Connect4Server {
                                 }
                             );
                         } else {
-                            self.acquired_names.insert(username.clone(), *id);
+                            self.acquired_names
+                                .insert(username.clone().to_lowercase(), *id);
                             client.username = Some(username);
                             encode!(
                                 client.write,
@@ -240,7 +250,9 @@ impl Connect4Server {
                                 ClientboundLoginPacket::KeepAlive
                             );
                         }
-                        ClientState::Lobby | ClientState::LookingForGame => {
+                        ClientState::Lobby
+                        | ClientState::LookingForGame
+                        | ClientState::WaitingForGame => {
                             encode!(
                                 client.write,
                                 ClientboundLobbyPacket,
@@ -270,18 +282,14 @@ impl Connect4Server {
                             if write_game.client_a.eq(id) {
                                 write_game.client_a_acquire = true;
                                 if write_game.client_b_acquire {
-                                    client_game_ready.push((
-                                        write_game.client_a,
-                                        write_game.client_b,
-                                    ))
+                                    client_game_ready
+                                        .push((write_game.client_a, write_game.client_b))
                                 }
                             } else if write_game.client_b.eq(id) {
                                 write_game.client_b_acquire = true;
                                 if write_game.client_a_acquire {
-                                    client_game_ready.push((
-                                        write_game.client_a,
-                                        write_game.client_b,
-                                    ))
+                                    client_game_ready
+                                        .push((write_game.client_a, write_game.client_b))
                                 }
                             } else {
                                 clients_to_remove.push(*id);
@@ -382,7 +390,8 @@ impl Connect4Server {
                 client_a_mut.write,
                 ClientboundGamePacket,
                 ClientboundGamePacket::OpponentJoin {
-                    username: client_b_mut.username.as_ref().unwrap().clone()
+                    username: client_b_mut.username.as_ref().unwrap().clone(),
+                    i_go_first: true
                 }
             );
 
@@ -390,7 +399,8 @@ impl Connect4Server {
                 client_b_mut.write,
                 ClientboundGamePacket,
                 ClientboundGamePacket::OpponentJoin {
-                    username: client_a_mut.username.as_ref().unwrap().clone()
+                    username: client_a_mut.username.as_ref().unwrap().clone(),
+                    i_go_first: false
                 }
             );
         }
@@ -412,9 +422,12 @@ impl Connect4Server {
             chunk[0].game = Some(lock_game.clone());
             chunk[1].game = Some(lock_game);
 
-            // todo implement timeout
             chunk[0].in_game_since = Some(SystemTime::now());
             chunk[1].in_game_since = Some(SystemTime::now());
+
+            chunk[0].state = ClientState::WaitingForGame;
+            chunk[1].state = ClientState::WaitingForGame;
+
             encode!(
                 chunk[0].write,
                 ClientboundLobbyPacket,
@@ -434,7 +447,7 @@ impl Connect4Server {
                 ..
             }) = self.clients.remove(removable)
             {
-                self.acquired_names.remove(&name);
+                self.acquired_names.remove(&name.to_lowercase());
                 if let Some(game) = game {
                     let game_read = game.read().await;
                     if !clients_to_remove.contains(&game_read.client_a) {
@@ -474,7 +487,7 @@ pin_project! {
 }
 
 impl<'a> Future for Connect4ServerRead<'a> {
-    type Output = core::drax::prelude::Result<()>;
+    type Output = connect_4_core::drax::prelude::Result<()>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut me = self.project();
@@ -483,7 +496,9 @@ impl<'a> Future for Connect4ServerRead<'a> {
         for (_, client) in me.clients.iter_mut() {
             if let Poll::Ready(message) = Pin::new(&mut client.client_receiver).poll_recv(cx) {
                 match message {
-                    None => client.queued_message = Some(ClientMessage::SocketDie),
+                    None => {
+                        client.queued_message = Some(ClientMessage::SocketDie);
+                    }
                     Some(message) => {
                         has_data_to_process = true;
                         client.queued_message = Some(message);
@@ -510,7 +525,7 @@ impl<'a> Future for Connect4ServerRead<'a> {
                 );
                 has_data_to_process = true;
             } else {
-                return Poll::Ready(Err(core::drax::err_explain!(
+                return Poll::Ready(Err(connect_4_core::drax::err_explain!(
                     "An instance of the client sender should always be held by the main loop."
                 )));
             }

@@ -1,11 +1,12 @@
 use crate::mediator::{ClientState, PacketMessage, WindowMessage};
-use core::encode;
-use core::packets::*;
+use connect_4_core::encode;
+use connect_4_core::packets::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::runtime::Builder;
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use tokio::task::LocalSet;
@@ -51,13 +52,13 @@ pub async fn spawn_game_client(
         .enable_all()
         .build()
         .map_err(|err| {
-            core::drax::err_explain!(format!("Error setting up thread builder: {err}"))
+            connect_4_core::drax::err_explain!(format!("Error setting up thread builder: {err}"))
         })?;
 
     let client_state_clone = client_state.clone();
     std::thread::spawn(move || {
         let client_state = client_state_clone;
-        use core::drax::prelude::DraxReadExt;
+        use connect_4_core::drax::prelude::DraxReadExt;
 
         let local = LocalSet::new();
 
@@ -98,16 +99,25 @@ pub async fn spawn_game_client(
     let mut pending_placement_transactions = HashMap::new();
     let mut pending_username_transactions = HashMap::new();
 
-    loop {
-        let mut window_messages = vec![];
-        while let Ok(message) = message_receiver.try_recv() {
-            window_messages.push(message);
-        }
+    macro_rules! read_receiver {
+        ($into:ident, $receiver:ident) => {
+            let mut $into = vec![];
+            loop {
+                let message = $receiver.try_recv();
+                match message {
+                    Ok(message) => $into.push(message),
+                    Err(err) => match err {
+                        TryRecvError::Empty => break,
+                        TryRecvError::Disconnected => return Ok(()),
+                    },
+                }
+            }
+        };
+    }
 
-        let mut packets = vec![];
-        while let Ok(packet) = packet_receiver.try_recv() {
-            packets.push(packet);
-        }
+    loop {
+        read_receiver!(window_messages, message_receiver);
+        read_receiver!(packets, packet_receiver);
 
         while let Some(next_message) = window_messages.pop() {
             match next_message {
@@ -124,7 +134,7 @@ pub async fn spawn_game_client(
                         ServerboundLoginPacket,
                         ServerboundLoginPacket::RequestUsername {
                             transaction_id: next_transaction_id,
-                            username
+                            username: username.clone()
                         }
                     );
                 }
@@ -211,9 +221,14 @@ pub async fn spawn_game_client(
                     if let InnerPacket::Game(game_packet) = packet {
                         match game_packet {
                             ClientboundGamePacket::KeepAlive => {}
-                            ClientboundGamePacket::OpponentJoin { username } => {
-                                message_sender
-                                    .send(WindowMessage::NotifyOpponentJoin { username })?;
+                            ClientboundGamePacket::OpponentJoin {
+                                username,
+                                i_go_first,
+                            } => {
+                                message_sender.send(WindowMessage::NotifyOpponentJoin {
+                                    username,
+                                    i_go_first,
+                                })?;
                             }
                             ClientboundGamePacket::PlacePieceAck { transaction_id } => {
                                 let column = pending_placement_transactions

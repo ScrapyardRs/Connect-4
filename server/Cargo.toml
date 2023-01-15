@@ -6,9 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-core = { path = "../core" }
+connect-4-core = { path = "../connect-4-core" }
 tokio = { version = "1.24.1", features = ["full"] }
 anyhow = "1.0.68"
 log = "0.4.17"
 uuid = { version = "1.2.2", features = ["v4"] }
 pin-project-lite = "0.2.9"
+regex = "1.7.1"

@@ -7,13 +7,13 @@ pub extern crate drax;
 #[macro_export]
 macro_rules! encode {
     ($write:expr, $ty:ty, $packet:expr) => {
-        let _ = core::drax::prelude::DraxWriteExt::encode_component::<(), $ty>(
+        let _ = connect_4_core::drax::prelude::DraxWriteExt::encode_component::<(), $ty>(
             &mut $write,
             &mut (),
             &$packet,
         )
         .await;
-    };
+    }
 }
 
 pub mod logger;
@@ -64,7 +64,8 @@ pub mod packets {
         enum ClientboundGamePacket<key: VarInt> {
             KeepAlive {},
             OpponentJoin {
-                username: super::Username
+                username: super::Username,
+                i_go_first: bool
             },
             PlacePieceAck {
                 transaction_id: i32
